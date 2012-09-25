@@ -1,11 +1,5 @@
+// draws on SimpleOpenNI DepthMap3d example
 
-// Expanding on:
-// Daniel Shiffman
-// Kinect Point Cloud example
-// http://www.shiffman.net
-// https://github.com/shiffman/libfreenect/tree/master/wrappers/java/processing
-
-//Libraries
 import SimpleOpenNI.*;
 
 import ddf.minim.*;
@@ -14,8 +8,7 @@ import ddf.minim.analysis.*;
 
 Stage stage;
 
-SimpleOpenNI  context;
-boolean       autoCalib=true;
+SimpleOpenNI context;
 
 Minim minim;
 AudioInput in;
@@ -25,11 +18,6 @@ char mode, submode;
 boolean mirrorOn, record, rotateOn, freeze3D, kill, erase;
 int bgColor;
 
-
-// We'll use a lookup table so that we don't have to repeat the math over and over
-float[] depthLookUp = new float[2048];
-int depthThreshold;
-
 // Size of kinect image
 int w = 640;
 int h = 480;
@@ -38,17 +26,9 @@ int h = 480;
 float a = 0;
 
 //Audio
-float freq_aver=0;
+float freq_aver = 0;
 boolean firstPeak;
 int timePeak, gapPeak;
-
-//Pre-calculated Stuff
-
-final double fx_d = 1.0 / 5.9421434211923247e+02;
-final double fy_d = 1.0 / 5.9104053696870778e+02;
-final double cx_d = 3.3930780975300314e+02;
-final double cy_d = 2.4273913761751615e+02;
-
 
 void setup() {
   size(1280,700, P3D);
@@ -68,13 +48,6 @@ void setup() {
   minim = new Minim(this);
   in = minim.getLineIn(Minim.STEREO,1024);
   fft = new FFT(in.bufferSize(), in.sampleRate());
-
-  // Lookup table for all possible depth values (0 - 2047)
-  for (int i = 0; i < depthLookUp.length; i++) {
-    depthLookUp[i] = rawDepthToMeters(i);
-  }
-
-  depthThreshold = -650;
 
   mirrorOn = true;
   record = false;
@@ -103,7 +76,8 @@ void draw() {
 
   fill(255);
   textMode(SCREEN);
-  //text("Kinect FR: " + (int)context.getDepthFPS() + "\nProcessing FR: " + (int)frameRate + "\n\nEnter to Rotate\nm to morph\nc to capture\n  f for freeze frame\n  b for breath\n  p for playback\n  o for ooze", 10,16);
+  //text("Kinect FR: " + (int)context.getDepthFPS() + "\nProcessing FR: " + (int)frameRate, 10, 16);
+  text("Enter to Rotate\nm to morph\nc to capture\n  f for freeze frame\n  b for breath\n  p for playback\n  o for ooze",  10, 32);
   
   
   translate(width/2,height/2,-50);
@@ -145,45 +119,33 @@ void audio_anal() {
   }
 }
 
+/*
+return an ArrayList of points from the point cloud
+*/
 ArrayList capture() {
-  // Get the raw depth as array of integers
-  int[] depth = context.depthMap();
+  ArrayList<PVector> ret = new ArrayList<PVector>();
+  
+    int[]   depthMap = context.depthMap();
+  int     steps   = 10;
+  int     index;
+  PVector realWorldPoint;
 
-  ArrayList<PVector> live = new ArrayList<PVector>();
-
-  // We're just going to calculate and draw every 4th pixel (equivalent of 160x120)
-  int skip = 4;
-
-  for(int x=0; x<w; x+=skip) {
-    for(int y=0; y<h; y+=skip) {
-      int offset = x+y*w;
-
-      // Convert kinect data to world xyz coordinate
-      int rawDepth = depth[offset];
-      PVector v = depthToWorld(x,y,rawDepth);
-      // Scale up by 200
-      float factor = 300;
-      if((factor-v.z*factor) > depthThreshold) {   
-        live.add(new PVector(v.x*factor, v.y*factor, factor-v.z*factor));
+  PVector[] realWorldMap = context.depthMapRealWorld();
+  for(int y=0;y < context.depthHeight();y+=steps)
+  {
+    for(int x=0;x < context.depthWidth();x+=steps)
+    {
+      index = x + y * context.depthWidth();
+      if(depthMap[index] > 0)
+      { 
+        // draw the projected point
+        realWorldPoint = realWorldMap[index];
+        ret.add(new PVector(realWorldPoint.x/4, -realWorldPoint.y/4, realWorldPoint.z/4));  // make realworld z negative, in the 3d drawing coordsystem +z points in the direction of the eye
       }
     }
-  }
-  return live;
-}
-
-// this needs work
-float rawDepthToMeters(int depthValue) {
-  return (float)((depthValue < 2000? 1: 0) * 1.0 / ((double)(depthValue) * -0.002 + 3.3309495161));
-}
-
-PVector depthToWorld(int x, int y, int depthValue) {
-
-  PVector result = new PVector();
-  double depth =  rawDepthToMeters(depthValue);
-  result.x = (float)((x - cx_d) * depth * fx_d);
-  result.y = (float)((y - cy_d) * depth * fy_d);
-  result.z = (float)(depth);
-  return result;
+  } 
+  
+  return ret;
 }
 
 void keyPressed() {
