@@ -6,15 +6,16 @@
 // https://github.com/shiffman/libfreenect/tree/master/wrappers/java/processing
 
 //Libraries
-import org.openkinect.*;
-import org.openkinect.processing.*;
+import SimpleOpenNI.*;
 
 import ddf.minim.*;
 import ddf.minim.signals.*;
 import ddf.minim.analysis.*;
 
 Stage stage;
-Kinect kinect;
+
+SimpleOpenNI  context;
+boolean       autoCalib=true;
 
 Minim minim;
 AudioInput in;
@@ -24,8 +25,6 @@ char mode, submode;
 boolean mirrorOn, record, rotateOn, freeze3D, kill, erase;
 int bgColor;
 
-// Angle of kinect camera
-float deg;
 
 // We'll use a lookup table so that we don't have to repeat the math over and over
 float[] depthLookUp = new float[2048];
@@ -56,13 +55,15 @@ void setup() {
   smooth();
 
   stage = new Stage();
-  kinect = new Kinect(this);
+  context = new SimpleOpenNI(this);
 
-  kinect.start();
-  kinect.enableDepth(true);
-  // We don't need the grayscale image in this example
-  // so this makes it more efficient
-  kinect.processDepthImage(false);
+  // enable depthMap generation 
+  if(context.enableDepth() == false)
+  {
+     println("Can't open the depthMap, maybe the camera is not connected!"); 
+     exit();
+     return;
+  }
 
   minim = new Minim(this);
   in = minim.getLineIn(Minim.STEREO,1024);
@@ -74,9 +75,6 @@ void setup() {
   }
 
   depthThreshold = -650;
-
-  deg = 10;
-  kinect.tilt(deg);
 
   mirrorOn = true;
   record = false;
@@ -95,14 +93,18 @@ void setup() {
 
 
 void draw() {
+  
+  // update the cam
+  context.update();
+  
   if(erase){
   background(bgColor);
   }
 
-  /*fill(255);
+  fill(255);
   textMode(SCREEN);
-  text("Kinect FR: " + (int)kinect.getDepthFPS() + "\nProcessing FR: " + (int)frameRate + "\n\nEnter to Rotate\nm to morph\nc to capture\n  f for freeze frame\n  b for breath\n  p for playback\n  o for ooze", 10,16);
-  */
+  //text("Kinect FR: " + (int)context.getDepthFPS() + "\nProcessing FR: " + (int)frameRate + "\n\nEnter to Rotate\nm to morph\nc to capture\n  f for freeze frame\n  b for breath\n  p for playback\n  o for ooze", 10,16);
+  
   
   translate(width/2,height/2,-50);
   audio_anal();
@@ -145,7 +147,7 @@ void audio_anal() {
 
 ArrayList capture() {
   // Get the raw depth as array of integers
-  int[] depth = kinect.getRawDepth();
+  int[] depth = context.depthMap();
 
   ArrayList<PVector> live = new ArrayList<PVector>();
 
@@ -169,28 +171,19 @@ ArrayList capture() {
   return live;
 }
 
-// These functions come from: http://graphics.stanford.edu/~mdfisher/Kinect.html
+// this needs work
 float rawDepthToMeters(int depthValue) {
-  if (depthValue < 2047) {
-    return (float)(1.0 / ((double)(depthValue) * -0.0030711016 + 3.3309495161));
-  }
-  return 0.0f;
+  return (float)((depthValue < 2000? 1: 0) * 1.0 / ((double)(depthValue) * -0.002 + 3.3309495161));
 }
 
 PVector depthToWorld(int x, int y, int depthValue) {
 
   PVector result = new PVector();
-  double depth =  depthLookUp[depthValue];//rawDepthToMeters(depthValue);
+  double depth =  rawDepthToMeters(depthValue);
   result.x = (float)((x - cx_d) * depth * fx_d);
   result.y = (float)((y - cy_d) * depth * fy_d);
   result.z = (float)(depth);
   return result;
-}
-
-
-void stop() {
-  kinect.quit();
-  super.stop();
 }
 
 void keyPressed() {
@@ -242,18 +235,6 @@ void keyPressed() {
     if(!freeze3D) {
      rotateOn = false; 
     }
-  }
-
-  if (key == CODED) {
-    if (keyCode == UP) {
-      deg++;
-    } 
-    else if (keyCode == DOWN) {
-      deg--;
-    }
-
-    deg = constrain(deg,0,30);
-    kinect.tilt(deg);
   }
   
   if (key == 'e') {
